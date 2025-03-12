@@ -173,7 +173,7 @@ static char* cache_dl1_opt;
 static char* mshr_opt;
 
 /* mshr hit latency (in cycles) */
-static int mshr_lat;
+extern int mshr_lat;
 
 /* l1 data cache hit latency (in cycles) */
 static int cache_dl1_lat;

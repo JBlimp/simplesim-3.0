@@ -45,7 +45,7 @@ mshr_create(
     struct mshr_t* mshr;
 
     mshr = (struct mshr_t*)
-        calloc(1, sizeof(struct mshr_t) + (nentries - 1) * sizeof(struct mshr_entry_t));
+        calloc(1, sizeof(struct mshr_t) + (nentries - 1) * sizeof(struct mshr_entry_t*));
     if (!mshr)
         fatal("out of virtual memory");
 
@@ -55,31 +55,47 @@ mshr_create(
     mshr->nvalid_entries = 0;
 
     /* set the block mask and shift same as cache for efficient decoding */
-    mshr->blk_mask = (1 << bsize) - 1;
-    mshr->blk_shift = (int)log2(mshr->blk_mask);
+    mshr->blk_mask = bsize - 1;
+    mshr->blk_shift = log_base2(bsize);
 
 
     /* allocate entries */
-    mshr->entries = (struct mshr_entry_t*)
-        calloc(nentries, sizeof(struct mshr_entry_t));
+    mshr->entries = (struct mshr_entry_t**)
+        calloc(nentries, sizeof(struct mshr_entry_t*));
     if (!mshr->entries)
         fatal("out of virtual memory");
+
+    for (int i = 0; i < nentries; i++)
+    {
+        mshr->entries[i] = (struct mshr_entry_t*)
+            calloc(1, sizeof(struct mshr_entry_t));
+        if (!mshr->entries[i])
+            fatal("out of virtual memory");
+    }
 
     /* allocate blocks */
     for (int i = 0; i < nentries; i++)
     {
-        mshr->entries[i].blk = (struct mshr_blk_t*)
-            calloc(nblks, sizeof(struct mshr_blk_t));
-        if (!mshr->entries[i].blk)
+        mshr->entries[i]->blk = (struct mshr_blk_t**)
+            calloc(nblks, sizeof(struct mshr_blk_t*));
+        if (!mshr->entries[i]->blk)
             fatal("out of virtual memory");
+
+        for (int j = 0; j < nblks; j++)
+        {
+            mshr->entries[i]->blk[j] = (struct mshr_blk_t*)
+                calloc(1, sizeof(struct mshr_blk_t));
+            if (!mshr->entries[i]->blk[j])
+                fatal("out of virtual memory");
+        }
     }
 
     /* initialize entries */
     for (int i = 0; i < nentries; i++)
     {
-        mshr->entries[i].status = 0;
-        mshr->entries[i].block_addr = 0;
-        mshr->entries[i].nvalid = 0;
+        mshr->entries[i]->status = 0;
+        mshr->entries[i]->block_addr = 0;
+        mshr->entries[i]->nvalid = 0;
     }
 
     /* initialize blocks */
@@ -87,9 +103,8 @@ mshr_create(
     {
         for (int j = 0; j < nblks; j++)
         {
-            mshr->entries[i].blk[j].status = 0;
-            mshr->entries[i].blk[j].offset = 0;
-            mshr->entries[i].blk[j].dest = NULL;
+            mshr->entries[i]->blk[j]->status = 0;
+            mshr->entries[i]->blk[j]->offset = 0;
         }
     }
 
@@ -109,6 +124,26 @@ mshr_lookup(
     md_addr_t addr /* address */
 )
 {
+    /* get the block address */
+    md_addr_t block_addr = MSHR_BLK_ADDR(mshr, addr);
+
+    /* check if the entry is valid */
+    for (int i = 0; i < mshr->nentries; i++)
+    {
+        if (mshr->entries[i]->status & MSHR_ENTRY_VALID && mshr->entries[i]->block_addr == block_addr)
+            return mshr->entries[i];
+    }
+
+    /* if not found, return NULL */
+    return NULL;
+}
+
+struct mshr_entry_t*
+mshr_lookup_entry(
+    struct mshr_t* mshr,
+    md_addr_t addr /* address */
+)
+{
     /* if mshr is full, return NULL */
     if (MSHR_IS_FULL(mshr))
     {
@@ -118,19 +153,19 @@ mshr_lookup(
     /* get the block address */
     md_addr_t block_addr = MSHR_BLK_ADDR(mshr, addr);
 
-    struct mshr_entry_t* entry; // using for loop
-    struct mshr_entry_t* entry_dirty; // last dirty entry
+    struct mshr_entry_t* entry_dirty = NULL; // last dirty entry
 
     /* check if the entry is valid */
-    for (entry = mshr->entries; entry != mshr->entries + mshr->nentries; entry++)
+    for (int i = 0; i < mshr->nentries; i++)
     {
-        if (entry->status & MSHR_ENTRY_VALID && entry->block_addr == block_addr)
-            return entry;
+        if (mshr->entries[i]->status & MSHR_ENTRY_VALID && mshr->entries[i]->block_addr == block_addr)
+            return mshr->entries[i];
+        if (mshr->entries[i]->status & ~MSHR_ENTRY_VALID)
+        {
+            entry_dirty = mshr->entries[i];
+        }
     }
-    if (entry->status & ~MSHR_ENTRY_VALID)
-    {
-        entry_dirty = entry;
-    }
+
     /* if not found, return the last dirty entry */
     if (entry_dirty)
     {
@@ -153,29 +188,30 @@ mshr_insert(
     struct mshr_entry_t* entry;
     struct mshr_blk_t* blk;
 
-    entry = mshr_lookup(mshr, addr);
+    entry = mshr_lookup_entry(mshr, addr);
     if (!entry)
     {
         /* 새 entry 할당 */
-        entry = &mshr->entries[mshr->nvalid++];
+        entry = mshr->entries[mshr->nvalid++];
         if (!entry)
             return NULL;
+        entry->end_time = end_time;
+        entry->block_addr = MSHR_BLK_ADDR(mshr, addr);
 
-        /* 메모리 요청 전송 */
-        if (entry->status & ~MSHR_ENTRY_PENDING)
-        {
-            unsigned int lat = mshr_send_request(mshr, entry, end_time);
-        }
+        // /* 메모리 요청 전송 */
+        // if (entry->status & ~MSHR_ENTRY_PENDING)
+        // {
+        //     unsigned int lat = mshr_send_request(mshr, entry, end_time);
+        // }
     }
 
     /* 블록 추가 */
-    if (entry && entry->nvalid < mshr->nblks)
+    if (entry /*&& entry->nvalid < mshr->nblks*/)//nblks 왜 계속 0됨?
     {
         // if entry is valid and not full
-        blk = &entry->blk[entry->nvalid++];
+        blk = entry->blk[entry->nvalid++];
         blk->status &= ~MSHR_BLOCK_VALID;
         blk->offset = MSHR_BLK_OFFSET(mshr, addr);
-        blk->end_time = end_time;
         blk->status |= MSHR_BLOCK_VALID;
         if (MSHR_ENTRY_IS_FULL(mshr, entry))
         {
@@ -197,7 +233,7 @@ mshr_free_entry(
 {
     for (int i = 0; i < entry->nvalid; i++)
     {
-        struct mshr_blk_t* blk = &entry->blk[i];
+        struct mshr_blk_t* blk = entry->blk[i];
         blk->status &= ~MSHR_BLOCK_VALID; // clear the valid status
     }
     entry->nvalid = 0; // clear the number of valid blocks
@@ -272,7 +308,7 @@ mshr_dump(struct mshr_t* mshr, FILE* stream)
     /* dump each entry */
     for (int i = 0; i < mshr->nentries; i++)
     {
-        struct mshr_entry_t* entry = &mshr->entries[i];
+        struct mshr_entry_t* entry = mshr->entries[i];
 
         fprintf(stream, "\nEntry %d:\n", i);
         fprintf(stream, "  status: 0x%x ", entry->status);
@@ -287,13 +323,12 @@ mshr_dump(struct mshr_t* mshr, FILE* stream)
         /* dump each block */
         for (int j = 0; j < entry->nvalid; j++)
         {
-            struct mshr_blk_t* blk = &entry->blk[j];
+            struct mshr_blk_t* blk = entry->blk[j];
             fprintf(stream, "    block %d:\n", j);
             fprintf(stream, "      status: 0x%x %s\n",
                     blk->status,
                     (blk->status & MSHR_BLOCK_VALID) ? "(valid)" : "");
             fprintf(stream, "      offset: 0x%08llx\n", blk->offset);
-            fprintf(stream, "      dest: %p\n", (void*)blk->dest);
         }
     }
     fprintf(stream, "\n");
@@ -312,8 +347,8 @@ mshr_update(struct mshr_t* mshr, tick_t now)
     struct mshr_entry_t* entry; // using for loop
 
     /* check if the entry is ready */
-    for (entry = mshr->entries; entry != mshr->entries + mshr->nentries; entry++)
+    for (int i = 0; i < mshr->nentries; i++)
     {
-        /* 각 엔트리, 블럭을 순회하며 now와 end_time과 비교하여 status 업데이트 */
+
     }
 }

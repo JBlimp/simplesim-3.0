@@ -61,6 +61,7 @@
 #include "mshr.h"
 
 struct mshr_t* mshr;
+int mshr_lat;
 
 /* cache access macros */
 #define CACHE_TAG(cp, addr)	((addr) >> (cp)->tag_shift)
@@ -543,12 +544,14 @@ cache_access(struct cache_t* cp, /* cache to access */
      */
     if (strcmp(cp->name, "ul2") == 0 && cmd == Read)
     {
+        struct mshr_entry_t* mshr_entry = mshr_lookup(mshr, addr);
         // addr is in mshr?
-        if (mshr_lookup(mshr, addr))
+        if (mshr_entry)
         {
             mshr->hits++;
             /* mshr에 존재한다는 의미는 기본적으로 cache miss인 상태임
              * 적절한 latency 리턴 필요 */
+            return mshr_entry->end_time - now + mshr_lat;
         }
     }
 

@@ -27,18 +27,17 @@ struct mshr_blk_t
 {
     unsigned int status; /* MSHR block status(valid, dirty) */
     md_addr_t offset; /* offset */
-    struct RUU_station* dest; /* destination, only pointer is stored so forward declaration is used */
-    tick_t end_time; /* time of 데이터 준비 */
 };
 
 /* MSHR entry structure */
 /* mshr block을 그룹화하여 관리 */
 struct mshr_entry_t
 {
-    struct mshr_blk_t* blk; /* mshr block pointer */
+    struct mshr_blk_t** blk; /* mshr block pointer */
     unsigned int status; /* mshr entry status(valid, dirty)  */
     md_addr_t block_addr; /* block address */
     int nvalid; /* number of valid blocks */
+    tick_t end_time; /* time of 데이터 준비 */
 };
 
 /* memory access function type, like cache's blk_access_fn */
@@ -52,7 +51,7 @@ typedef unsigned int
 /* MSHR structure */
 struct mshr_t
 {
-    struct mshr_entry_t* entries; /* MSHR entries */
+    struct mshr_entry_t** entries; /* MSHR entries */
     int nentries; /* number of entries */
     int nblks; /* number of blocks for each entry */
     int nvalid; /* number of valid entries */
@@ -87,6 +86,12 @@ struct mshr_entry_t*
 mshr_lookup(
     struct mshr_t* mshr,
     md_addr_t addr
+);
+
+struct mshr_entry_t*
+mshr_lookup_entry(
+    struct mshr_t* mshr,
+    md_addr_t addr /* address */
 );
 
 /* mshr insert */
