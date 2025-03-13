@@ -56,10 +56,9 @@ struct mshr_t
     int nblks; /* number of blocks for each entry */
     int nvalid; /* number of valid entries */
     int bsize; /* block size */
-    int nvalid_entries; /* number of valid entries */
 
     /* derived data, for fast decoding */
-    md_addr_t blk_mask; /* block mask */
+    int blk_mask; /* block mask */
     int blk_shift; /* block shift */
 
     /* memory access function */
@@ -86,12 +85,6 @@ struct mshr_entry_t*
 mshr_lookup(
     struct mshr_t* mshr,
     md_addr_t addr
-);
-
-struct mshr_entry_t*
-mshr_lookup_entry(
-    struct mshr_t* mshr,
-    md_addr_t addr /* address */
 );
 
 /* mshr insert */

@@ -1064,7 +1064,8 @@ sim_check_options(struct opt_odb_t* odb, /* options database */
         if (sscanf(mshr_opt, "%[^:]:%d:%d:%d:%c",
                    name, &nsets, &bsize, &assoc, &c) != 5)
             fatal("bad mshr parms: <name>:<nsets>:<bsize>:<assoc>:<repl>");
-        mshr = mshr_create(bsize, nsets, assoc);
+        //mshr = mshr_create(bsize, nsets, assoc);
+        mshr = mshr_create(64, 64, 16);
         if (sscanf(cache_dl2_opt, "%[^:]:%d:%d:%d:%c",
                    name, &nsets, &bsize, &assoc, &c) != 5)
             cache_dl2 = NULL;
@@ -1399,28 +1400,28 @@ sim_reg_stats(struct stat_sdb_t* sdb) /* stats database */
     mem_reg_stats(mem, sdb);
 
     /* register mshr stats */
-    if (mshr)
-    {
-        stat_reg_counter(sdb, "mshr.accesses",
-                         "total number of MSHR accesses",
-                         &mshr->nvalid, 0, NULL);
-
-        stat_reg_counter(sdb, "mshr.hits",
-                         "total number of MSHR hits",
-                         &mshr->nvalid_entries, 0, NULL);
-
-        stat_reg_formula(sdb, "mshr.misses",
-                         "total number of MSHR misses",
-                         "mshr.accesses - mshr.hits", NULL);
-
-        stat_reg_counter(sdb, "mshr.full",
-                         "number of times MSHR was full",
-                         &mshr->nentries, 0, NULL);
-
-        stat_reg_formula(sdb, "mshr.miss_rate",
-                         "MSHR miss rate (misses/ref)",
-                         "mshr.misses / mshr.accesses", NULL);
-    }
+    // if (mshr)
+    // {
+    //     stat_reg_counter(sdb, "mshr.accesses",
+    //                      "total number of MSHR accesses",
+    //                      &mshr->nvalid, 0, NULL);
+    //
+    //     stat_reg_counter(sdb, "mshr.hits",
+    //                      "total number of MSHR hits",
+    //                      &mshr->nvalid_entries, 0, NULL);
+    //
+    //     stat_reg_formula(sdb, "mshr.misses",
+    //                      "total number of MSHR misses",
+    //                      "mshr.accesses - mshr.hits", NULL);
+    //
+    //     stat_reg_counter(sdb, "mshr.full",
+    //                      "number of times MSHR was full",
+    //                      &mshr->nentries, 0, NULL);
+    //
+    //     stat_reg_formula(sdb, "mshr.miss_rate",
+    //                      "MSHR miss rate (misses/ref)",
+    //                      "mshr.misses / mshr.accesses", NULL);
+    // }
 }
 
 /* forward declarations */
@@ -4688,6 +4689,7 @@ sim_main(void)
 
         /* go to next cycle */
         sim_cycle++;
+        mshr_update(mshr, sim_cycle);
 
         /* finish early? */
         if (max_insts && sim_num_insn >= max_insts)

@@ -16,22 +16,22 @@ extern struct cache_t* cache_dl1; // 추가
 */
 /* get the offset of the block */
 #define MSHR_BLK_OFFSET(mshr, addr) \
-  ((addr) & (mshr)->blk_mask)
+((addr) & (mshr)->blk_mask)
 /* get the address of the block */
 #define MSHR_BLK_ADDR(mshr, addr) \
-  ((addr) & ~(mshr)->blk_mask)
+((addr) & ~(mshr)->blk_mask)
 /* check if the mshr is full */
 #define MSHR_IS_FULL(mshr) \
-  ((mshr)->nvalid == (mshr)->nentries)
+((mshr)->nvalid == (mshr)->nentries)
 /* check if the mshr is empty */
 #define MSHR_IS_EMPTY(mshr) \
-  ((mshr)->nvalid == 0)
+((mshr)->nvalid == 0)
 /* check if the entry is full */
 #define MSHR_ENTRY_IS_FULL(mshr, entry) \
-  ((mshr)->nvalid_entries == (mshr)->nentries)
+((mshr)->nvalid == (mshr)->nentries)
 /* check if the entry is valid */
 #define MSHR_ENTRY_IS_VALID(mshr, entry) \
-  ((entry)->status & MSHR_ENTRY_VALID)
+((entry)->status & MSHR_ENTRY_VALID)
 
 
 /* create mshr */
@@ -45,14 +45,14 @@ mshr_create(
     struct mshr_t* mshr;
 
     mshr = (struct mshr_t*)
-        calloc(1, sizeof(struct mshr_t) + (nentries - 1) * sizeof(struct mshr_entry_t*));
+        calloc(1, sizeof(struct mshr_t));
     if (!mshr)
         fatal("out of virtual memory");
 
     mshr->nentries = nentries;
     mshr->nblks = nblks;
     mshr->bsize = bsize;
-    mshr->nvalid_entries = 0;
+    mshr->nvalid = 0;
 
     /* set the block mask and shift same as cache for efficient decoding */
     mshr->blk_mask = bsize - 1;
@@ -124,6 +124,8 @@ mshr_lookup(
     md_addr_t addr /* address */
 )
 {
+    if (MSHR_IS_FULL(mshr)) return NULL;
+
     /* get the block address */
     md_addr_t block_addr = MSHR_BLK_ADDR(mshr, addr);
 
@@ -134,45 +136,6 @@ mshr_lookup(
             return mshr->entries[i];
     }
 
-    /* if not found, return NULL */
-    return NULL;
-}
-
-struct mshr_entry_t*
-mshr_lookup_entry(
-    struct mshr_t* mshr,
-    md_addr_t addr /* address */
-)
-{
-    /* if mshr is full, return NULL */
-    if (MSHR_IS_FULL(mshr))
-    {
-        return NULL;
-    }
-
-    /* get the block address */
-    md_addr_t block_addr = MSHR_BLK_ADDR(mshr, addr);
-
-    struct mshr_entry_t* entry_dirty = NULL; // last dirty entry
-
-    /* check if the entry is valid */
-    for (int i = 0; i < mshr->nentries; i++)
-    {
-        if (mshr->entries[i]->status & MSHR_ENTRY_VALID && mshr->entries[i]->block_addr == block_addr)
-            return mshr->entries[i];
-        if (mshr->entries[i]->status & ~MSHR_ENTRY_VALID)
-        {
-            entry_dirty = mshr->entries[i];
-        }
-    }
-
-    /* if not found, return the last dirty entry */
-    if (entry_dirty)
-    {
-        entry_dirty->status |= MSHR_ENTRY_VALID;
-        entry_dirty->block_addr = block_addr;
-        return entry_dirty;
-    }
     /* if not found, return NULL */
     return NULL;
 }
@@ -185,41 +148,40 @@ mshr_insert(
     tick_t end_time
 )
 {
-    struct mshr_entry_t* entry;
-    struct mshr_blk_t* blk;
+    struct mshr_entry_t *entry = NULL;
+    struct mshr_blk_t *blk = NULL;
 
-    entry = mshr_lookup_entry(mshr, addr);
-    if (!entry)
-    {
+    entry = mshr_lookup(mshr, addr);
+
+    if (entry && entry->status & MSHR_ENTRY_FULL)
+        return NULL; // 모든 entry가 유효함(stall 해야 하는 상황)
+    if (!entry) {
         /* 새 entry 할당 */
-        entry = mshr->entries[mshr->nvalid++];
-        if (!entry)
-            return NULL;
-        entry->end_time = end_time;
-        entry->block_addr = MSHR_BLK_ADDR(mshr, addr);
-
-        // /* 메모리 요청 전송 */
-        // if (entry->status & ~MSHR_ENTRY_PENDING)
-        // {
-        //     unsigned int lat = mshr_send_request(mshr, entry, end_time);
-        // }
-    }
-
-    /* 블록 추가 */
-    if (entry /*&& entry->nvalid < mshr->nblks*/)//nblks 왜 계속 0됨?
-    {
-        // if entry is valid and not full
-        blk = entry->blk[entry->nvalid++];
-        blk->status &= ~MSHR_BLOCK_VALID;
-        blk->offset = MSHR_BLK_OFFSET(mshr, addr);
-        blk->status |= MSHR_BLOCK_VALID;
-        if (MSHR_ENTRY_IS_FULL(mshr, entry))
+        for (int i = 0; i < mshr->nentries; i++)
         {
-            // entry is full
+            entry = mshr->entries[i];
+            if (!(entry->status & MSHR_ENTRY_VALID)) {
+                entry->nvalid = 0;
+                entry->status |= MSHR_ENTRY_VALID;
+                entry->block_addr = MSHR_BLK_ADDR(mshr, addr);
+                entry->end_time = end_time;
+                mshr->nvalid++;
+                break;
+            }
         }
     }
+    if (entry == NULL) {
+        return NULL; // 모든 entry가 유효함(stall 해야 하는 상황)
+    }
+    /* 블록 추가 */
+    blk = entry->blk[entry->nvalid++];
+    blk->offset = MSHR_BLK_OFFSET(mshr, addr);
+    blk->status |= MSHR_BLOCK_VALID;
 
-    return entry; // return valid entry, if not valid, return NULL
+    if (MSHR_ENTRY_IS_FULL(mshr, entry))
+        entry->status |= MSHR_ENTRY_FULL;
+
+    return entry; // return valid entry
 }
 
 /* free entry
@@ -236,64 +198,9 @@ mshr_free_entry(
         struct mshr_blk_t* blk = entry->blk[i];
         blk->status &= ~MSHR_BLOCK_VALID; // clear the valid status
     }
-    entry->nvalid = 0; // clear the number of valid blocks
     entry->status &= ~MSHR_ENTRY_VALID; // clear the valid status
+    mshr->nvalid--;
 }
-//
-//
-// /* memory request send function */
-// /* TODO: latency를 여기서 처리할게 아니라
-//  * cache_access에서 mshr에 등록할때 병합대상의 남은 시간만큼을 리턴해야할듯? */
-// unsigned int
-// mshr_send_request(
-//     struct mshr_t* mshr,
-//     struct mshr_entry_t* entry,
-//     tick_t now
-// )
-// {
-//     unsigned int lat;
-//
-//     lat = mshr->mem_access_fn(Read, entry->block_addr, mshr->bsize, entry, now);
-//
-//     entry->status |= MSHR_ENTRY_PENDING;
-//     return lat;
-// }
-
-/* memory request complete function
-* complete the memory request and update the entry status
-* send the data to the destined LSQ station
-*/
-// void
-// mshr_complete_request(
-//     struct mshr_t* mshr,
-//     struct mshr_entry_t* entry,
-//     byte_t* data,
-//     tick_t now
-// )
-// {
-//     cache_access(
-//         cache_dl1, // mshr->cache 대신 cache_dl1 사용
-//         Write,
-//         entry->block_addr,
-//         data,
-//         mshr->bsize,
-//         now,
-//         NULL, NULL
-//     );
-//
-//     /* set the completed status of the destination station */
-//     for (int i = 0; i < entry->nvalid; i++)
-//     {
-//         struct mshr_blk_t* blk = &entry->blk[i];
-//         if (blk->status & MSHR_BLOCK_VALID)
-//         {
-//             struct RUU_station* dest = blk->dest;
-//             dest->completed = 1; // TRUE -> 1
-//         }
-//     }
-//
-//     mshr_free_entry(mshr, entry); // free the entry
-// }
 
 void
 mshr_dump(struct mshr_t* mshr, FILE* stream)
@@ -335,20 +242,17 @@ mshr_dump(struct mshr_t* mshr, FILE* stream)
 }
 
 // 이 함수를 global time이 업데이트 될때마다 호출
+// 굳이 필요 없을듯?
 void
 mshr_update(struct mshr_t* mshr, tick_t now)
 {
     /* if mshr is empty, return */
-    if (MSHR_IS_EMPTY(mshr))
-    {
+    if (MSHR_IS_EMPTY(mshr)) {
         return;
     }
 
-    struct mshr_entry_t* entry; // using for loop
-
     /* check if the entry is ready */
-    for (int i = 0; i < mshr->nentries; i++)
-    {
-
+    for (int i = 0; i < mshr->nentries; i++) {
+        if (now >= mshr->entries[i]->end_time && MSHR_ENTRY_IS_VALID(mshr, mshr->entries[i])) mshr_free_entry(mshr, mshr->entries[i]);
     }
 }
