@@ -64,17 +64,19 @@ struct mshr_t* mshr;
 int mshr_lat;
 
 /* cache access macros */
-#define CACHE_TAG(cp, addr)	((addr) >> (cp)->tag_shift)
-#define CACHE_SET(cp, addr)	(((addr) >> (cp)->set_shift) & (cp)->set_mask)
-#define CACHE_BLK(cp, addr)	((addr) & (cp)->blk_mask)
-#define CACHE_TAGSET(cp, addr)	((addr) & (cp)->tagset_mask)
+#define CACHE_TAG(cp, addr)	((addr) >> (cp)->tag_shift) // 캐시 태그 추출
+#define CACHE_SET(cp, addr)	(((addr) >> (cp)->set_shift) & (cp)->set_mask) // 캐시 셋 추출
+#define CACHE_BLK(cp, addr)	((addr) & (cp)->blk_mask) // 블록 오프셋 추출
+#define CACHE_TAGSET(cp, addr)	((addr) & (cp)->tagset_mask) // 태그, 셋 동시 추출
 
 /* extract/reconstruct a block address */
-#define CACHE_BADDR(cp, addr)	((addr) & ~(cp)->blk_mask)
+#define CACHE_BADDR(cp, addr)	((addr) & ~(cp)->blk_mask) // 블럭의 시작 주소 추출
 #define CACHE_MK_BADDR(cp, tag, set)					\
-  (((tag) << (cp)->tag_shift)|((set) << (cp)->set_shift))
+  (((tag) << (cp)->tag_shift)|((set) << (cp)->set_shift)) // 태그, 셋을 이용하여 블럭 주소 생성
 
-/* index an array of cache blocks, non-trivial due to variable length blocks */
+/* index an array of cache blocks, non-trivial due to variable length blocks
+ * blks 배열에서 i번째 블럭의 포인터를 반환
+ */
 #define CACHE_BINDEX(cp, blks, i)					\
   ((struct cache_blk_t *)(((char *)(blks)) +				\
 			  (i)*(sizeof(struct cache_blk_t) +		\
@@ -544,6 +546,7 @@ cache_access(struct cache_t* cp, /* cache to access */
      */
     if (strcmp(cp->name, "ul2") == 0 && cmd == Read)
     {
+        mshr->accesses++;
         struct mshr_entry_t* mshr_entry = mshr_lookup(mshr, addr);
         // addr is in mshr?
         if (mshr_entry)
@@ -553,6 +556,7 @@ cache_access(struct cache_t* cp, /* cache to access */
              * 적절한 latency 리턴 필요 */
             return mshr_entry->end_time - now + mshr_lat;
         }
+        mshr->misses++;
     }
 
 

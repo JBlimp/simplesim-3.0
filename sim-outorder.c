@@ -908,7 +908,7 @@ sim_reg_options(struct opt_odb_t* odb)
     /* mshr options */
     opt_reg_string(odb, "-mshr",
                    "mshr config, i.e., {<config>|none}",
-                   &mshr_opt, "mshr:8:32:4:l", /* default: 8 entries, 32 blocks/entry, 4B block size */
+                   &mshr_opt, "mshr:64:32:64:l", /* default: 64 entries, 32 blocks/entry, 64 block size */
                    /* print */TRUE, NULL);
 
     opt_reg_int(odb, "-mshr:lat",
@@ -1064,8 +1064,7 @@ sim_check_options(struct opt_odb_t* odb, /* options database */
         if (sscanf(mshr_opt, "%[^:]:%d:%d:%d:%c",
                    name, &nsets, &bsize, &assoc, &c) != 5)
             fatal("bad mshr parms: <name>:<nsets>:<bsize>:<assoc>:<repl>");
-        //mshr = mshr_create(bsize, nsets, assoc);
-        mshr = mshr_create(64, 64, 16);
+        mshr = mshr_create(bsize, nsets, assoc);
         if (sscanf(cache_dl2_opt, "%[^:]:%d:%d:%d:%c",
                    name, &nsets, &bsize, &assoc, &c) != 5)
             cache_dl2 = NULL;
@@ -1157,19 +1156,21 @@ sim_check_options(struct opt_odb_t* odb, /* options database */
                             /* hit latency */1);
     }
 
-    /* use a D-TLB? */
-    if (!mystricmp(dtlb_opt, "none"))
-        dtlb = NULL;
-    else
-    {
-        if (sscanf(dtlb_opt, "%[^:]:%d:%d:%d:%c",
-                   name, &nsets, &bsize, &assoc, &c) != 5)
-            fatal("bad TLB parms: <name>:<nsets>:<page_size>:<assoc>:<repl>");
-        dtlb = cache_create(name, nsets, bsize, /* balloc */FALSE,
-                            /* usize */sizeof(md_addr_t), assoc,
-                            cache_char2policy(c), dtlb_access_fn,
-                            /* hit latency */1);
-    }
+     /* use a D-TLB? */
+    // todo: dtlb 강제 null
+    // if (!mystricmp(dtlb_opt, "none"))
+    //     dtlb = NULL;
+    // else
+    // {
+    //     if (sscanf(dtlb_opt, "%[^:]:%d:%d:%d:%c",
+    //                name, &nsets, &bsize, &assoc, &c) != 5)
+    //         fatal("bad TLB parms: <name>:<nsets>:<page_size>:<assoc>:<repl>");
+    //     dtlb = cache_create(name, nsets, bsize, /* balloc */FALSE,
+    //                         /* usize */sizeof(md_addr_t), assoc,
+    //                         cache_char2policy(c), dtlb_access_fn,
+    //                         /* hit latency */1);
+    // }
+    dtlb = NULL;
 
     if (cache_dl1_lat < 1)
         fatal("l1 data cache latency must be greater than zero");
@@ -1399,29 +1400,29 @@ sim_reg_stats(struct stat_sdb_t* sdb) /* stats database */
     ld_reg_stats(sdb);
     mem_reg_stats(mem, sdb);
 
-    /* register mshr stats */
-    // if (mshr)
-    // {
-    //     stat_reg_counter(sdb, "mshr.accesses",
-    //                      "total number of MSHR accesses",
-    //                      &mshr->nvalid, 0, NULL);
-    //
-    //     stat_reg_counter(sdb, "mshr.hits",
-    //                      "total number of MSHR hits",
-    //                      &mshr->nvalid_entries, 0, NULL);
-    //
-    //     stat_reg_formula(sdb, "mshr.misses",
-    //                      "total number of MSHR misses",
-    //                      "mshr.accesses - mshr.hits", NULL);
-    //
-    //     stat_reg_counter(sdb, "mshr.full",
-    //                      "number of times MSHR was full",
-    //                      &mshr->nentries, 0, NULL);
-    //
-    //     stat_reg_formula(sdb, "mshr.miss_rate",
-    //                      "MSHR miss rate (misses/ref)",
-    //                      "mshr.misses / mshr.accesses", NULL);
-    // }
+    /* print mshr stats */
+    if (mshr)
+    {
+        stat_reg_counter(sdb, "mshr.accesses",
+                         "total number of MSHR accesses",
+                         &mshr->accesses, mshr->accesses, NULL);
+
+        stat_reg_counter(sdb, "mshr.hits",
+                         "total number of MSHR hits",
+                         &mshr->hits, mshr->hits, NULL);
+
+        stat_reg_counter(sdb, "mshr.misses",
+                         "total number of MSHR misses",
+                         &mshr->misses, mshr->misses, NULL);
+
+        /* stat_reg_counter(sdb, "mshr.full",
+                         "number of times MSHR was full",
+                         &mshr->nentries, mshr->nentries, NULL); */
+
+        stat_reg_formula(sdb, "mshr.miss_rate",
+                         "MSHR miss rate (misses/ref)",
+                         "mshr->misses / mshr->accesses", NULL);
+    }
 }
 
 /* forward declarations */

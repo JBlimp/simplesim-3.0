@@ -9,6 +9,8 @@
 #       CFLAGS = {GNU GCC compiler flags}
 #
 CFLAGS	= -O2 -g
+SIM_DIR = /
+SIM_BIN = tests/bin
 
 all: tests-live tests-eio
 

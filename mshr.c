@@ -55,8 +55,8 @@ mshr_create(
     mshr->nvalid = 0;
 
     /* set the block mask and shift same as cache for efficient decoding */
-    mshr->blk_mask = bsize - 1;
-    mshr->blk_shift = log_base2(bsize);
+    mshr->blk_mask = bsize * 2 - 1;
+    mshr->blk_shift = log_base2(bsize * 2);
 
 
     /* allocate entries */
@@ -241,8 +241,10 @@ mshr_dump(struct mshr_t* mshr, FILE* stream)
     fprintf(stream, "\n");
 }
 
-// 이 함수를 global time이 업데이트 될때마다 호출
-// 굳이 필요 없을듯?
+/* 이 함수를 global time이 업데이트 될때마다 호출
+ * 요쳥이 완료된 엔트리를 할당 해제
+ * 캐시 lazy 업데이트를 구현할 때 여기서 업데이트를 해주면 될듯
+ */
 void
 mshr_update(struct mshr_t* mshr, tick_t now)
 {
