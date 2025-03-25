@@ -362,6 +362,8 @@ cache_create(char* name, /* name of the cache */
     {
         cp->sets[i].way_head = NULL;
         cp->sets[i].way_tail = NULL;
+        /* initialize plru bits */
+        cp->sets[i].plru_bits = 0;
         /* get a hash table, if needed */
         if (cp->hsize)
         {
@@ -605,6 +607,20 @@ cache_access(struct cache_t* cp, /* cache to access */
     switch (cp->policy)
     {
     case LRU:
+        int idx = 0;
+        for (int level = 0; level < log_base2(cp->assoc); level++) {
+            int bit = (cp->sets[set].plru_bits >> idx) & 1;
+            if (bit == 0) {
+                // left chosen
+                idx = 2 * idx + 1;
+            } else {
+                // right chosen
+                idx = 2 * idx + 2;
+            }
+        }
+        int repl_index = idx - (cp->assoc - 1);
+        repl = CACHE_BINDEX(cp, cp->sets[set].blks, repl_index);
+        break;
     case FIFO:
         repl = cp->sets[set].way_tail;
         update_way_list(&cp->sets[set], repl, Head);
@@ -686,7 +702,10 @@ cache_access(struct cache_t* cp, /* cache to access */
     /* insert to mshr */
     if (strcmp(cp->name, "ul2") == 0 && cmd == Read)
     {
-        mshr_insert(mshr, addr, now + lat);
+        /* 가득 차면 min(end_time of mshr entries) + lat로 stall 구현
+         * entry array는 충분한 크기로 할당, nentries랑 nvalid 비교로 가득참을 확인
+         */
+        mshr_insert(mshr, addr, now, lat);
     }
 
     /* return latency of the operation */
@@ -697,6 +716,27 @@ cache_hit: /* slow hit handler */
 
     /* **HIT** */
     cp->hits++;
+    /* plru bits update */
+    if (cp->policy == LRU) {
+        int blk_index = 0;
+        struct cache_blk_t* tmp;
+        for (tmp = cp->sets[set].way_head; tmp; tmp = tmp->way_next, blk_index++) {
+            if (tmp == blk)
+                break;
+        }
+
+        int idx = 0;
+        for (int level = 0; level < log_base2(cp->assoc); level++) {
+            int bit = (blk_index >> ((int)log_base2(cp->assoc) - 1 - level)) & 1;
+            if (bit == 0) {
+                cp->sets[set].plru_bits &= ~(1 << idx); // set 0
+                idx = 2 * idx + 1;
+            } else {
+                cp->sets[set].plru_bits |= (1 << idx);  // set 1
+                idx = 2 * idx + 2;
+            }
+        }
+    }
 
     /* copy data out of cache block, if block exists */
     if (cp->balloc)
@@ -732,6 +772,27 @@ cache_fast_hit: /* fast hit handler */
 
     /* **FAST HIT** */
     cp->hits++;
+    /* plru bits update */
+    if (cp->policy == LRU) {
+        int blk_index = 0;
+        struct cache_blk_t* tmp;
+        for (tmp = cp->sets[set].way_head; tmp; tmp = tmp->way_next, blk_index++) {
+            if (tmp == blk)
+                break;
+        }
+
+        int idx = 0;
+        for (int level = 0; level < log_base2(cp->assoc); level++) {
+            int bit = (blk_index >> ((int)log_base2(cp->assoc) - 1 - level)) & 1;
+            if (bit == 0) {
+                cp->sets[set].plru_bits &= ~(1 << idx); // set 0
+                idx = 2 * idx + 1;
+            } else {
+                cp->sets[set].plru_bits |= (1 << idx);  // set 1
+                idx = 2 * idx + 2;
+            }
+        }
+    }
 
     /* copy data out of cache block, if block exists */
     if (cp->balloc)
@@ -900,3 +961,4 @@ cache_flush_addr(struct cache_t* cp, /* cache instance to flush */
     /* return latency of the operation */
     return lat;
 }
+

@@ -145,7 +145,8 @@ struct mshr_entry_t*
 mshr_insert(
     struct mshr_t* mshr,
     md_addr_t addr,
-    tick_t end_time
+    tick_t now,
+    tick_t lat
 )
 {
     struct mshr_entry_t *entry = NULL;
@@ -164,7 +165,7 @@ mshr_insert(
                 entry->nvalid = 0;
                 entry->status |= MSHR_ENTRY_VALID;
                 entry->block_addr = MSHR_BLK_ADDR(mshr, addr);
-                entry->end_time = end_time;
+                entry->end_time = now + lat;
                 mshr->nvalid++;
                 break;
             }

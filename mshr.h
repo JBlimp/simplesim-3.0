@@ -92,7 +92,8 @@ struct mshr_entry_t*
 mshr_insert(
     struct mshr_t* mshr,
     md_addr_t addr,
-    tick_t end_time
+    tick_t now,
+    tick_t lat
 );
 
 // /* memory request send function */
