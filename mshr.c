@@ -59,10 +59,15 @@ mshr_create(
     mshr->blk_shift = log_base2(bsize * 2);
 
 
-    /* allocate entries */
+    /* allocate entries and stalled entries */
     mshr->entries = (struct mshr_entry_t**)
         calloc(nentries, sizeof(struct mshr_entry_t*));
+    mshr->stalled = (struct mshr_entry_t**)
+        calloc(nentries, sizeof(struct mshr_entry_t*));
+
     if (!mshr->entries)
+        fatal("out of virtual memory");
+    if (!mshr->stalled)
         fatal("out of virtual memory");
 
     for (int i = 0; i < nentries; i++)
@@ -70,6 +75,14 @@ mshr_create(
         mshr->entries[i] = (struct mshr_entry_t*)
             calloc(1, sizeof(struct mshr_entry_t));
         if (!mshr->entries[i])
+            fatal("out of virtual memory");
+    }
+
+    for (int i = 0; i < nentries; i++)
+    {
+        mshr->stalled[i] = (struct mshr_entry_t*)
+            calloc(1, sizeof(struct mshr_entry_t));
+        if (!mshr->stalled[i])
             fatal("out of virtual memory");
     }
 
@@ -141,7 +154,7 @@ mshr_lookup(
 }
 
 /* mshr insert */
-struct mshr_entry_t*
+int
 mshr_insert(
     struct mshr_t* mshr,
     md_addr_t addr,
@@ -182,7 +195,7 @@ mshr_insert(
     if (MSHR_ENTRY_IS_FULL(mshr, entry))
         entry->status |= MSHR_ENTRY_FULL;
 
-    return entry; // return valid entry
+    return 0; // return valid entry
 }
 
 /* free entry

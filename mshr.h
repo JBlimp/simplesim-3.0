@@ -52,6 +52,7 @@ typedef unsigned int
 struct mshr_t
 {
     struct mshr_entry_t** entries; /* MSHR entries */
+    struct mshr_entry_t** stalled; /* stalled MSHR entries */
     int nentries; /* number of entries */
     int nblks; /* number of blocks for each entry */
     int nvalid; /* number of valid entries */
@@ -88,7 +89,7 @@ mshr_lookup(
 );
 
 /* mshr insert */
-struct mshr_entry_t*
+int
 mshr_insert(
     struct mshr_t* mshr,
     md_addr_t addr,

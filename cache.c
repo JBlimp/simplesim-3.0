@@ -314,7 +314,8 @@ cache_create(char* name, /* name of the cache */
     cp->bsize = bsize;
     cp->balloc = balloc;
     cp->usize = usize;
-    cp->assoc = assoc;
+    //cp->assoc = assoc;
+    cp->assoc = 4;
     cp->policy = policy;
     cp->hit_latency = hit_latency;
 
@@ -705,7 +706,7 @@ cache_access(struct cache_t* cp, /* cache to access */
         /* 가득 차면 min(end_time of mshr entries) + lat로 stall 구현
          * entry array는 충분한 크기로 할당, nentries랑 nvalid 비교로 가득참을 확인
          */
-        mshr_insert(mshr, addr, now, lat);
+        lat += mshr_insert(mshr, addr, now, lat);
     }
 
     /* return latency of the operation */
@@ -720,9 +721,10 @@ cache_hit: /* slow hit handler */
     if (cp->policy == LRU) {
         int blk_index = 0;
         struct cache_blk_t* tmp;
-        for (tmp = cp->sets[set].way_head; tmp; tmp = tmp->way_next, blk_index++) {
+        for (tmp = cp->sets[set].way_head; tmp; tmp = tmp->way_next) {
             if (tmp == blk)
                 break;
+            blk_index++;
         }
 
         int idx = 0;
@@ -776,9 +778,10 @@ cache_fast_hit: /* fast hit handler */
     if (cp->policy == LRU) {
         int blk_index = 0;
         struct cache_blk_t* tmp;
-        for (tmp = cp->sets[set].way_head; tmp; tmp = tmp->way_next, blk_index++) {
+        for (tmp = cp->sets[set].way_head; tmp; tmp = tmp->way_next) {
             if (tmp == blk)
                 break;
+            blk_index++;
         }
 
         int idx = 0;
