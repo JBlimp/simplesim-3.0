@@ -348,6 +348,9 @@ static counter_t sim_num_branches = 0;
 /* total number of branches executed */
 static counter_t sim_total_branches = 0;
 
+/* junsuk: stalled cycle because of blocking cache */
+static counter_t sim_stalled = 0;
+
 /* cycle counter */
 static tick_t sim_cycle = 0;
 
@@ -1284,6 +1287,9 @@ sim_reg_stats(struct stat_sdb_t* sdb) /* stats database */
     stat_reg_counter(sdb, "sim_cycle",
                      "total simulation time in cycles",
                      &sim_cycle, /* initial value */0, /* format */NULL);
+    stat_reg_counter(sdb, "sim_stalled",
+                     "total simulation time stalled",
+                     &sim_stalled, /* initial value */0, /* format */NULL);
     stat_reg_formula(sdb, "sim_IPC",
                      "instructions per cycle",
                      "sim_num_insn / sim_cycle", /* format */NULL);
@@ -3839,9 +3845,10 @@ ruu_dispatch(void)
         MD_SET_OPCODE(op, inst);
 
         /* junsuk: stall until cache is busy */
-        if (MD_OP_FLAGS(op) & F_MEM)
+        if (MD_OP_FLAGS(op) & F_MEM && sim_cycle < cache_busy_until)
         {
-            if (sim_cycle < cache_busy_until) break;
+            sim_stalled++;
+            break;
         }
 
         regs.regs_PC = fetch_data[fetch_head].regs_PC;
