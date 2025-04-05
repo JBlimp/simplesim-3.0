@@ -213,6 +213,9 @@ static int mem_lat[2] =
 /* memory access bus width (in bytes) */
 static int mem_bus_width;
 
+/* junsuk: cache busy tick */
+static tick_t cache_busy_until;
+
 /* instruction TLB config, i.e., {<config>|none} */
 static char* itlb_opt;
 
@@ -1443,6 +1446,7 @@ sim_init(void)
 
     /* allocate and initialize register file */
     regs_init(&regs);
+    cache_busy_until = 0;
 
     /* allocate and initialize memory space */
     mem = mem_create("mem");
@@ -2809,8 +2813,12 @@ ruu_issue(void)
                                         cache_access(cache_dl1, Read,
                                                      (rs->addr & ~3), NULL, 4,
                                                      sim_cycle, NULL, NULL);
-                                    if (load_lat > cache_dl1_lat)
+                                    if (load_lat > cache_dl1_lat) {
                                         events |= PEV_CACHEMISS;
+                                        /* junsuk: cache miss, schedule
+                                         * cache busy until */
+                                        cache_busy_until = sim_cycle + load_lat;
+                                    }
                                 }
                                 else
                                 {
@@ -3826,14 +3834,22 @@ ruu_dispatch(void)
 
         /* get the next instruction from the IFETCH -> DISPATCH queue */
         inst = fetch_data[fetch_head].IR;
+
+        /* decode the inst */
+        MD_SET_OPCODE(op, inst);
+
+        /* junsuk: stall until cache is busy */
+        if (MD_OP_FLAGS(op) & F_MEM)
+        {
+            if (sim_cycle < cache_busy_until) break;
+        }
+
         regs.regs_PC = fetch_data[fetch_head].regs_PC;
         pred_PC = fetch_data[fetch_head].pred_PC;
         dir_update_ptr = &(fetch_data[fetch_head].dir_update);
         stack_recover_idx = fetch_data[fetch_head].stack_recover_idx;
         pseq = fetch_data[fetch_head].ptrace_seq;
 
-        /* decode the inst */
-        MD_SET_OPCODE(op, inst);
 
         /* compute default next PC */
         regs.regs_NPC = regs.regs_PC + sizeof(md_inst_t);

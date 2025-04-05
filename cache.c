@@ -547,8 +547,8 @@ cache_access(struct cache_t* cp, /* cache to access */
     /* 여기서 mshr을 우선적으로 확인(mshr_lookup 호출)
      * 합칠수 있을시 return 0
      */
-    if (strcmp(cp->name, "ul2") == 0 && cmd == Read)
-    {
+     if (strcmp(cp->name, "ul2") == 0 && cmd == Read)
+     {
         mshr->accesses++;
         struct mshr_entry_t* mshr_entry = mshr_lookup(mshr, addr);
         // addr is in mshr?
@@ -602,6 +602,7 @@ cache_access(struct cache_t* cp, /* cache to access */
     /* mshr에도 없고 cache miss인 상황임
      * miss 처리 후 mshr_insert */
     cp->misses++;
+    //cp->lock=1;
 
     /* select the appropriate block to replace, and re-link this entry to
        the appropriate place in the way list */
